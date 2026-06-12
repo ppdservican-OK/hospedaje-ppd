@@ -1,0 +1,204 @@
+// ============================================================
+// schema.prisma — VERSIÓN 2.0 (Auditada y Corregida)
+// FASE 4A revisada — Historial Sanitario Inmutable
+// Proyecto: Gestión de Hospedaje Canino
+// ============================================================
+//
+// CAMBIOS RESPECTO A V1:
+//   + Modelo RegistroVacunacion (historial inmutable por evento)
+//   + Campos email y whatsapp en Tutor (requeridos por webhooks)
+//   + Campo foto_url en Perro preparado para URL de Cloudinary
+//   + PlanSanitario mantiene solo la fecha VIGENTE (última)
+//   + RegistroVacunacion guarda cada aplicación histórica
+//
+// FILOSOFÍA DE DATOS SANITARIOS:
+//   PlanSanitario  → "¿Cuándo vence HOY?" (usado por el cron)
+//   RegistroVacunacion → "¿Qué se aplicó históricamente?" (auditoría)
+//   Ambos se actualizan juntos en cada carga de vacuna.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ════════════════════════════════════════════════════════════
+// MODELO: Tutor (Cliente)
+// ════════════════════════════════════════════════════════════
+model Tutor {
+  id                  String   @id @default(cuid())
+  nombre_completo     String   @db.VarChar(120)
+  telefono_principal  String   @unique @db.VarChar(25)
+  telefono_emergencia String?  @db.VarChar(25)
+  email               String?  @unique @db.VarChar(200)
+  // whatsapp puede diferir del teléfono (ej: línea fija vs celular)
+  whatsapp            String?  @db.VarChar(25)
+  direccion_completa  String?  @db.VarChar(300)
+  como_nos_conocio    String?  @db.VarChar(100)
+
+  creado_en           DateTime @default(now())
+  actualizado_en      DateTime @updatedAt
+
+  perros              Perro[]
+
+  @@map("tutores")
+}
+
+// ════════════════════════════════════════════════════════════
+// MODELO: Perro
+// ════════════════════════════════════════════════════════════
+model Perro {
+  id                          String    @id @default(cuid())
+  tutor_id                    String
+
+  nombre                      String    @db.VarChar(80)
+  // foto_url: URL permanente en Cloudinary/Supabase (ver webhookRoutes v2)
+  foto_url                    String?   @db.VarChar(500)
+  fecha_nacimiento            DateTime? @db.Date
+
+  caracteristicas_generales   String?   @db.Text
+  caracteristicas_especificas String?   @db.Text
+  // Json permite guardar la estructura completa del formulario
+  datos_comportamiento        Json?
+  datos_salud                 Json?
+
+  creado_en                   DateTime  @default(now())
+  actualizado_en              DateTime  @updatedAt
+
+  tutor                       Tutor              @relation(fields: [tutor_id], references: [id], onDelete: Cascade)
+  estadias                    Estadia[]
+  // Un perro tiene UN plan vigente y MUCHOS registros históricos
+  plan_sanitario              PlanSanitario?
+  registros_vacunacion        RegistroVacunacion[]
+
+  @@index([tutor_id])
+  @@index([nombre])
+  @@map("perros")
+}
+
+// ════════════════════════════════════════════════════════════
+// MODELO: PlanSanitario
+// Solo almacena la fecha de vencimiento VIGENTE (la más reciente).
+// Es el modelo que consulta el cron de notificaciones.
+// Se actualiza cada vez que llega un RegistroVacunacion nuevo.
+// ════════════════════════════════════════════════════════════
+model PlanSanitario {
+  id                                  String    @id @default(cuid())
+  perro_id                            String    @unique
+
+  // Fecha del ÚLTIMO vencimiento vigente para cada tipo
+  vacuna_sextuple_vencimiento         DateTime? @db.Date
+  vacuna_antirrabica_vencimiento      DateTime? @db.Date
+  vacuna_tos_perreras_vencimiento     DateTime? @db.Date
+  antiparasitario_interno_vencimiento DateTime? @db.Date
+  pipeta_antiparasitaria_vencimiento  DateTime? @db.Date
+
+  creado_en                           DateTime  @default(now())
+  actualizado_en                      DateTime  @updatedAt
+
+  perro                               Perro     @relation(fields: [perro_id], references: [id], onDelete: Cascade)
+
+  // Índices para las queries del cron (notificationService.js)
+  @@index([vacuna_sextuple_vencimiento])
+  @@index([vacuna_antirrabica_vencimiento])
+  @@index([vacuna_tos_perreras_vencimiento])
+  @@index([antiparasitario_interno_vencimiento])
+  @@index([pipeta_antiparasitaria_vencimiento])
+  @@map("planes_sanitarios")
+}
+
+// ════════════════════════════════════════════════════════════
+// MODELO: RegistroVacunacion (NUEVO — Historial Inmutable)
+//
+// FILOSOFÍA: Este registro NUNCA se modifica ni se borra.
+// Es la auditoría permanente de cada vacuna o antiparasitario
+// que se aplicó al perro. Permite ver el historial completo.
+//
+// Cada vez que el staff carga una vacuna nueva:
+//   1. Se crea un RegistroVacunacion (este modelo)
+//   2. Se actualiza PlanSanitario con la nueva fecha vigente
+// ════════════════════════════════════════════════════════════
+
+// Enum: tipos de tratamiento sanitario posibles
+enum TipoTratamiento {
+  VACUNA_SEXTUPLE
+  VACUNA_ANTIRRABICA
+  VACUNA_TOS_PERRERAS
+  ANTIPARASITARIO_INTERNO
+  PIPETA_ANTIPARASITARIA
+}
+
+model RegistroVacunacion {
+  id                String           @id @default(cuid())
+  perro_id          String
+
+  tipo_tratamiento  TipoTratamiento                      // Qué se aplicó
+  fecha_aplicacion  DateTime         @db.Date            // Cuándo se aplicó
+  fecha_vencimiento DateTime         @db.Date            // Hasta cuándo es válido
+  marca_laboratorio String?          @db.VarChar(100)    // Ej: "Nobivac", "Merck"
+  numero_lote       String?          @db.VarChar(80)     // Número de lote del vial
+  nombre_veterinario String?         @db.VarChar(120)    // Quién lo aplicó
+  clinica_veterinaria String?        @db.VarChar(150)    // Dónde se aplicó
+  // URL del certificado o foto del carnet (subido a Cloudinary)
+  certificado_url   String?          @db.VarChar(500)
+  // Notas libres del staff o veterinario
+  observaciones     String?          @db.Text
+  // Quién cargó el registro en el sistema
+  cargado_por       String?          @db.VarChar(100)
+
+  // Auditoría — inmutable: NO tiene @updatedAt deliberadamente
+  creado_en         DateTime         @default(now())
+
+  perro             Perro            @relation(fields: [perro_id], references: [id], onDelete: Cascade)
+
+  @@index([perro_id])
+  @@index([tipo_tratamiento])
+  @@index([fecha_vencimiento])
+  @@map("registros_vacunacion")
+}
+
+// ════════════════════════════════════════════════════════════
+// MODELO: Estadia
+// ════════════════════════════════════════════════════════════
+
+enum EstadiaEstado {
+  Reservada
+  Activa
+  Finalizada
+  Cancelada
+}
+
+model Estadia {
+  id                       String        @id @default(cuid())
+  perro_id                 String
+
+  fecha_ingreso            DateTime                            // Con hora (TZ)
+  fecha_egreso             DateTime                            // Con hora (TZ)
+
+  // Desglose del cobro para transparencia total
+  dias_completos           Int                                 // Días enteros contados
+  aplica_medio_dia         Boolean       @default(false)       // ¿El egreso fue antes del mediodía?
+  valor_por_dia            Decimal       @db.Decimal(10, 2)
+  valor_estadia_total      Decimal       @db.Decimal(10, 2)    // Resultado final con regla horaria
+
+  requiere_traslado        Boolean       @default(false)
+  requiere_banio           Boolean       @default(false)
+  requiere_adiestramiento  Boolean       @default(false)
+
+  historial_estado         EstadiaEstado @default(Reservada)
+  notas_internas           String?       @db.Text
+
+  creado_en                DateTime      @default(now())
+  actualizado_en           DateTime      @updatedAt
+
+  perro                    Perro         @relation(fields: [perro_id], references: [id], onDelete: Cascade)
+
+  @@index([perro_id])
+  @@index([fecha_ingreso])
+  @@index([historial_estado])
+  @@map("estadias")
+}
