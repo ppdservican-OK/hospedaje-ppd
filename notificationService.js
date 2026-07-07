@@ -112,7 +112,7 @@ async function sendEmail({ to, subject, text }) {
       from: `"La Manada 🐾" <${process.env.GMAIL_USER}>`,
       to, subject, text,
     });
-    logger.info(`Email enviado a ${to} | MessageId: ${info.messageId}`);
+    logger.info(`Email enviado a ${to.substring(0,3)}*** | MessageId: ${info.messageId}`);
   } catch (err) {
     logger.error(`Error al enviar email a ${to}: ${err.message}`);
   }
@@ -127,7 +127,7 @@ async function sendWhatsApp({ to, body }) {
       to: toFormatted,
       body,
     });
-    logger.info(`WhatsApp enviado a ${toFormatted} | SID: ${message.sid}`);
+    logger.info(`WhatsApp enviado a ${toFormatted.substring(0,6)}*** | SID: ${message.sid}`);
   } catch (err) {
     logger.error(`Error al enviar WhatsApp a ${toFormatted}: ${err.message}`);
   }
