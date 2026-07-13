@@ -162,10 +162,10 @@ async function subirFotoACloudinary(urlTemporal, nombrePerro, tutorId) {
 
 const validarComportamiento = [
   body('telefono_tutor').trim().notEmpty().matches(/^[\d\s\+\-\(\)]{7,20}$/),
-  body('email_tutor').trim().notEmpty().isEmail().normalizeEmail(),
+  body('email_tutor').optional({ nullable: true, checkFalsy: true }).trim().isEmail().normalizeEmail(),
   body('nombre_tutor').trim().notEmpty().isLength({ min: 2, max: 120 }).escape(),
   body('nombre_perro').trim().notEmpty().isLength({ min: 1, max: 80 }).escape(),
-  body('fecha_nacimiento').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+  body('fecha_nacimiento').optional({ nullable: true, checkFalsy: true }).isString().isLength({ min: 1, max: 50 }),
   body('datos_comportamiento').notEmpty()
     .customSanitizer((v) => typeof v === 'object' ? v : (() => {
       try { return JSON.parse(v); } catch { return { texto: String(v) }; }
