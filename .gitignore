@@ -1,0 +1,25 @@
+# ============================================================
+# .gitignore — La Manada Backend
+# ============================================================
+# Este archivo le dice a GitHub qué archivos NO subir.
+# El .env contiene contraseñas reales → NUNCA debe subir a GitHub.
+# ============================================================
+
+# Variables de entorno (contraseñas y secrets)
+.env
+.env.local
+.env.production
+
+# Dependencias (se reinstalan automáticamente en Railway)
+node_modules/
+
+# Logs del servidor
+logs/
+*.log
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Caché de Prisma (se regenera automáticamente)
+prisma/migrations/migration_lock.toml.bak
