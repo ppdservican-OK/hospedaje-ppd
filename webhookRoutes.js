@@ -200,7 +200,7 @@ router.post('/comportamiento', webhookLimiter, verificarFirma, validarComportami
           perro = await tx.perro.create({
             data: {
               tutor_id: tutor.id, nombre: nombre_perro,
-              fecha_nacimiento: fecha_nacimiento ? new Date(fecha_nacimiento) : null,
+              fecha_nacimiento: fecha_nacimiento ? (() => { const d = new Date(fecha_nacimiento); return isNaN(d.getTime()) ? null : d; })() : null,
               datos_comportamiento, foto_url: fotoUrl,
             },
           });
